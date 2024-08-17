@@ -1,12 +1,9 @@
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
 #include <ncurses.h>
 #include <vector>
-
-const int BOARD_ROWS = 10;
-const int BOARD_COLS = 10;
-const int MINES_COUNT = 10;
 
 /**
  * @brief Represents the state of a cell in the Minesweeper board.
@@ -22,30 +19,29 @@ struct Cell {
  * @brief Initializes the Minesweeper board with mines and adjacent mine counts.
  *
  * @param board 2D vector representing the Minesweeper board.
+ * @param mines_count Number of mines to place on the board.
  */
-void initialize_board(std::vector<std::vector<Cell>> &board) {
-  board.resize(BOARD_ROWS, std::vector<Cell>(BOARD_COLS));
-
+void initialize_board(std::vector<std::vector<Cell>> &board, int mines_count) {
   std::srand(std::time(0));
   int mines_placed = 0;
-  while (mines_placed < MINES_COUNT) {
-    int row = std::rand() % BOARD_ROWS;
-    int col = std::rand() % BOARD_COLS;
+  while (mines_placed < mines_count) {
+    int row = std::rand() % board.size();
+    int col = std::rand() % board[0].size();
     if (!board[row][col].is_mine) {
       board[row][col].is_mine = true;
       mines_placed++;
     }
   }
 
-  for (int row = 0; row < BOARD_ROWS; row++) {
-    for (int col = 0; col < BOARD_COLS; col++) {
+  for (int row = 0; row < board.size(); row++) {
+    for (int col = 0; col < board[0].size(); col++) {
       if (!board[row][col].is_mine) {
         int count = 0;
         for (int i = -1; i <= 1; i++) {
           for (int j = -1; j <= 1; j++) {
             int r = row + i;
             int c = col + j;
-            if (r >= 0 && r < BOARD_ROWS && c >= 0 && c < BOARD_COLS &&
+            if (r >= 0 && r < board.size() && c >= 0 && c < board[0].size() &&
                 board[r][c].is_mine) {
               count++;
             }
@@ -78,6 +74,7 @@ void initialize_ncurses() {
   init_pair(9, COLOR_WHITE,
             COLOR_BLACK); // Number 0 (black background, white text)
   init_pair(10, COLOR_BLACK, COLOR_MAGENTA); // Cursor (golden with black text)
+  init_pair(11, COLOR_BLACK, COLOR_RED);     // Flag
 }
 
 /**
@@ -123,11 +120,11 @@ int get_color_pair(int number, bool is_cursor) {
  */
 void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
                    int cursor_col) {
-  int remaining_mines = MINES_COUNT;
+  int remaining_mines = 0;
   for (const auto &row : board) {
     for (const auto &cell : row) {
-      if (cell.is_flagged) {
-        remaining_mines--;
+      if (cell.is_mine && !cell.is_flagged) {
+        remaining_mines++;
       }
     }
   }
@@ -135,37 +132,36 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
   mvprintw(0, 0, "Remaining mines: %d", remaining_mines);
   move(1, 0);
 
-  for (int row = 0; row < BOARD_ROWS; row++) {
-    for (int col = 0; col < BOARD_COLS; col++) {
-
+  for (int row = 0; row < board.size(); row++) {
+    for (int col = 0; col < board[0].size(); col++) {
       Cell curr_cell = board[row][col];
-
       bool is_cursor = (row == cursor_row && col == cursor_col);
       int color_pair = get_color_pair(curr_cell.adjacent_mines, is_cursor);
 
-      // draw all unopened cells gray color
-      if (!curr_cell.is_revealed and !curr_cell.is_flagged) {
+      // Draw unopened cells, note all flags are unopened.
+      bool is_untouched = !curr_cell.is_revealed && !curr_cell.is_flagged;
+      if (is_untouched) {
         if (is_cursor) {
           attron(COLOR_PAIR(10));
           printw("* ");
           attroff(COLOR_PAIR(10));
-          continue;
         } else {
           attron(COLOR_PAIR(1));
           printw("* ");
           attroff(COLOR_PAIR(1));
-          continue;
         }
-      } else { // its either revelead or it's a flag
-        attron(COLOR_PAIR(color_pair));
+      } else {
         if (curr_cell.is_flagged) {
+          attron(COLOR_PAIR(11));
           printw("F ");
-        } else if (board[row][col].is_mine) {
+          attroff(COLOR_PAIR(11));
+        } else if (curr_cell.is_mine) {
           printw("M ");
         } else {
-          printw("%d ", board[row][col].adjacent_mines);
+          attron(COLOR_PAIR(color_pair));
+          printw("%d ", curr_cell.adjacent_mines);
+          attroff(COLOR_PAIR(color_pair));
         }
-        attroff(COLOR_PAIR(color_pair));
       }
     }
     printw("\n");
@@ -177,7 +173,9 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
  * @brief Reveals a cell on the Minesweeper board recursively.
  *
  * This function reveals the specified cell and, if it has no adjacent mines,
- * recursively reveals its neighboring cells.
+ * recursively reveals its neighboring cells. If the number of adjacent mines
+ * equals the number of adjacent flags, it reveals all non-flagged squares
+ * around it.
  *
  * @param board 2D vector representing the Minesweeper board.
  * @param row Row index of the cell to reveal.
@@ -186,7 +184,7 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
  * @return True if the cell was revealed successfully, false if a mine was hit.
  */
 bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
-  if (row < 0 || row >= BOARD_ROWS || col < 0 || col >= BOARD_COLS ||
+  if (row < 0 || row >= board.size() || col < 0 || col >= board[0].size() ||
       board[row][col].is_revealed || board[row][col].is_flagged) {
     return true;
   }
@@ -195,6 +193,33 @@ bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
 
   if (board[row][col].is_mine) {
     return false;
+  }
+
+  int flagged_neighbors = 0;
+  int adjacent_count = board[row][col].adjacent_mines;
+
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      int r = row + i;
+      int c = col + j;
+      if (r >= 0 && r < board.size() && c >= 0 && c < board[0].size() &&
+          board[r][c].is_flagged) {
+        flagged_neighbors++;
+      }
+    }
+  }
+
+  if (flagged_neighbors == adjacent_count) {
+    for (int i = -1; i <= 1; i++) {
+      for (int j = -1; j <= 1; j++) {
+        int r = row + i;
+        int c = col + j;
+        if (r >= 0 && r < board.size() && c >= 0 && c < board[0].size() &&
+            !board[r][c].is_flagged) {
+          reveal_cell(board, r, c);
+        }
+      }
+    }
   }
 
   if (board[row][col].adjacent_mines == 0) {
@@ -209,110 +234,198 @@ bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
 }
 
 /**
+ * @brief Reveals all adjacent cells of a specified cell on the Minesweeper
+ * board.
+ *
+ * @param board 2D vector representing the Minesweeper board.
+ * @param row Row index of the center cell.
+ * @param col Column index of the center cell.
+ */
+bool reveal_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
+                           int col) {
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      int r = row + i;
+      int c = col + j;
+      if (!reveal_cell(board, r, c)) {
+        return false;
+      }
+    }
+  }
+    return true;
+}
+
+/**
  * @brief Flags or unflags a cell on the Minesweeper board.
  *
  * @param board 2D vector representing the Minesweeper board.
  * @param row Row index of the cell to flag or unflag.
  * @param col Column index of the cell to flag or unflag.
  */
-void flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
-  if (row >= 0 && row < BOARD_ROWS && col >= 0 && col < BOARD_COLS &&
+void toggle_flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
+  if (row >= 0 && row < board.size() && col >= 0 && col < board[0].size() &&
       !board[row][col].is_revealed) {
     board[row][col].is_flagged = !board[row][col].is_flagged;
   }
 }
 
 /**
- * @brief Handles the game loop, user input, and game state updates.
+ * @brief Flags a cell on the Minesweeper board.
+ *
+ * @param board 2D vector representing the Minesweeper board.
+ * @param row Row index of the cell to flag
+ * @param col Column index of the cell to flag
  */
-void play_game() {
-  std::vector<std::vector<Cell>> board;
-  initialize_board(board);
+void flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
+  if (row >= 0 && row < board.size() && col >= 0 && col < board[0].size() &&
+      !board[row][col].is_revealed) {
+    board[row][col].is_flagged = true;
+  }
+}
+
+/**
+ * @brief Flags all adjacent cells of a specified cell on the Minesweeper board.
+ *
+ * @param board 2D vector representing the Minesweeper board.
+ * @param row Row index of the center cell.
+ * @param col Column index of the center cell.
+ */
+void flag_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
+                         int col) {
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      int r = row + i;
+      int c = col + j;
+      flag_cell(board, r, c);
+    }
+  }
+}
+
+/**
+ * @brief Displays the help text for the command-line Minesweeper game.
+ */
+void display_help() {
+  std::cout
+      << "Minesweeper Game - Command Line Version\n"
+      << "Usage: minesweeper [OPTIONS]\n"
+      << "Options:\n"
+      << "  --width <value>    Set the width of the board (default: 10)\n"
+      << "  --height <value>   Set the height of the board (default: 10)\n"
+      << "  --mines <value>    Set the number of mines (default: 10)\n"
+      << "  --help             Display this help message\n";
+}
+
+/**
+ * @brief Main function for the Minesweeper game.
+ *
+ * Handles command-line arguments and manages the game loop.
+ *
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line arguments.
+ *
+ * @return Exit status code.
+ */
+int main(int argc, char *argv[]) {
+  int width = 10;
+  int height = 10;
+  int mines_count = 10;
+
+  // Handle command-line arguments
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+    if (arg == "--width" && i + 1 < argc) {
+      width = std::stoi(argv[++i]);
+    } else if (arg == "--height" && i + 1 < argc) {
+      height = std::stoi(argv[++i]);
+    } else if (arg == "--mines" && i + 1 < argc) {
+      mines_count = std::stoi(argv[++i]);
+    } else if (arg == "--help") {
+      display_help();
+      return 0;
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      display_help();
+      return 1;
+    }
+  }
+
+  std::vector<std::vector<Cell>> board(height, std::vector<Cell>(width));
+  initialize_board(board, mines_count);
   initialize_ncurses();
 
-  int cursor_row = 0, cursor_col = 0;
+  int cursor_row = 0;
+  int cursor_col = 0;
   bool game_over = false;
-  bool game_won = false;
 
-  while (!game_over && !game_won) {
+  while (!game_over) {
     display_board(board, cursor_row, cursor_col);
-
     int ch = getch();
     switch (ch) {
     case KEY_UP:
-      if (cursor_row > 0)
-        cursor_row--;
+      cursor_row = std::max(0, cursor_row - 1);
       break;
     case KEY_DOWN:
-      if (cursor_row < BOARD_ROWS - 1)
-        cursor_row++;
+      cursor_row = std::min(static_cast<int>(board.size()) - 1, cursor_row + 1);
       break;
     case KEY_LEFT:
-      if (cursor_col > 0)
-        cursor_col--;
+      cursor_col = std::max(0, cursor_col - 1);
       break;
     case KEY_RIGHT:
-      if (cursor_col < BOARD_COLS - 1)
-        cursor_col++;
+      cursor_col =
+          std::min(static_cast<int>(board[0].size()) - 1, cursor_col + 1);
+      break;
+    case 'd':
+      if (!reveal_cell(board, cursor_row, cursor_col)) {
+        game_over = true;
+        mvprintw(board.size() + 2, 0,
+                 "Game over! Press 'r' to restart or 'q' to quit.");
+      }
+      break;
+    case 'D':
+      if (!reveal_adjacent_cells(board, cursor_row, cursor_col)) {
+        game_over = true;
+        mvprintw(board.size() + 2, 0,
+                 "Game over! Press 'r' to restart or 'q' to quit.");
+      }
       break;
     case 'f':
-      flag_cell(board, cursor_row, cursor_col);
+      toggle_flag_cell(board, cursor_row, cursor_col);
       break;
-    case ' ':
-      if (!board[cursor_row][cursor_col].is_revealed) {
-        game_over = !reveal_cell(board, cursor_row, cursor_col);
-      }
+    case 'F': // Shift-F to flag all adjacent cells
+      flag_adjacent_cells(board, cursor_row, cursor_col);
       break;
     case 'q':
       game_over = true;
       break;
+    case 'r':
+      board = std::vector<std::vector<Cell>>(height, std::vector<Cell>(width));
+      initialize_board(board, mines_count);
+      cursor_row = 0;
+      cursor_col = 0;
+      game_over = false;
+      break;
+    default:
+      break;
     }
 
+    // Check for win condition
     bool all_revealed = true;
-    for (int row = 0; row < BOARD_ROWS; row++) {
-      for (int col = 0; col < BOARD_COLS; col++) {
-        if (!board[row][col].is_revealed && !board[row][col].is_mine) {
+    for (const auto &row : board) {
+      for (const auto &cell : row) {
+        if (!cell.is_mine && !cell.is_revealed) {
           all_revealed = false;
           break;
         }
       }
     }
-
     if (all_revealed) {
-      game_won = true;
-      mvprintw(BOARD_ROWS + 2, 0,
-               "Congratulations! You've cleared all the mines!");
-      refresh();
-      char choice = getch();
-      if (choice == 'y' || choice == 'Y') {
-        endwin();
-        play_game();
-        return;
-      }
-    }
-
-    if (game_over) {
-      mvprintw(BOARD_ROWS + 2, 0,
-               "Game Over! Press 'y' to restart or 'q' to quit.");
-      refresh();
-      char choice = getch();
-      if (choice == 'y' || choice == 'Y') {
-        endwin();
-        play_game();
-        return;
-      }
+      mvprintw(board.size() + 2, 0,
+               "Congratulations! You cleared the board! Press 'r' to restart "
+               "or 'q' to quit.");
+      game_over = true;
     }
   }
 
   endwin();
-}
-
-/**
- * @brief The main function that starts the Minesweeper game.
- *
- * @return 0 on successful execution.
- */
-int main() {
-    play_game();
-    return 0;
+  return 0;
 }
