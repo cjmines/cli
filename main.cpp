@@ -68,14 +68,50 @@ void initialize_ncurses() {
 
   start_color();
   init_pair(1, COLOR_BLACK, COLOR_WHITE);   // Default background
-  init_pair(2, COLOR_WHITE, COLOR_BLACK);   // Number 0
-  init_pair(3, COLOR_BLUE, COLOR_BLACK);    // Number 1
-  init_pair(4, COLOR_GREEN, COLOR_BLACK);   // Number 2
-  init_pair(5, COLOR_YELLOW, COLOR_BLACK);  // Number 3
-  init_pair(6, COLOR_RED, COLOR_BLACK);     // Number 4
-  init_pair(7, COLOR_MAGENTA, COLOR_BLACK); // Number 5
-  init_pair(8, COLOR_CYAN, COLOR_BLACK);    // Number 6
-  init_pair(9, COLOR_MAGENTA, COLOR_BLACK); // Number 7
+  init_pair(2, COLOR_BLUE, COLOR_BLACK);    // Number 1
+  init_pair(3, COLOR_GREEN, COLOR_BLACK);   // Number 2
+  init_pair(4, COLOR_YELLOW, COLOR_BLACK);  // Number 3
+  init_pair(5, COLOR_RED, COLOR_BLACK);     // Number 4
+  init_pair(6, COLOR_MAGENTA, COLOR_BLACK); // Number 5
+  init_pair(7, COLOR_CYAN, COLOR_BLACK);    // Number 6
+  init_pair(8, COLOR_MAGENTA, COLOR_BLACK); // Number 7
+  init_pair(9, COLOR_WHITE,
+            COLOR_BLACK); // Number 0 (black background, white text)
+  init_pair(10, COLOR_BLACK, COLOR_MAGENTA); // Cursor (golden with black text)
+}
+
+/**
+ * @brief Gets the color pair for a specific number and cursor state.
+ *
+ * @param number The number on the cell (0-8) or special value for mine or flag.
+ * @param is_cursor Boolean flag indicating if the cell is under the cursor.
+ *
+ * @return The color pair number.
+ */
+int get_color_pair(int number, bool is_cursor) {
+  if (is_cursor) {
+    return 10; // Cursor color: gold on black
+  }
+  switch (number) {
+  case 0:
+    return 9; // Black background with white text
+  case 1:
+    return 2; // Blue
+  case 2:
+    return 3; // Green
+  case 3:
+    return 4; // Yellow
+  case 4:
+    return 5; // Red
+  case 5:
+    return 6; // Pink
+  case 6:
+    return 7; // Lime green
+  case 7:
+    return 8; // Purple
+  default:
+    return 1; // Default color for mines or flags
+  }
 }
 
 /**
@@ -98,62 +134,38 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
 
   mvprintw(0, 0, "Remaining mines: %d", remaining_mines);
   move(1, 0);
+
   for (int row = 0; row < BOARD_ROWS; row++) {
     for (int col = 0; col < BOARD_COLS; col++) {
-      if (row == cursor_row && col == cursor_col) {
-        attron(A_REVERSE);
-      }
 
-      if (board[row][col].is_flagged) {
-        attron(COLOR_PAIR(1));
-        printw("F ");
-        attroff(COLOR_PAIR(1));
-      } else if (!board[row][col].is_revealed) {
-        attron(COLOR_PAIR(1));
-        printw("* ");
-        attroff(COLOR_PAIR(1));
-      } else if (board[row][col].is_mine) {
-        attron(COLOR_PAIR(1));
-        printw("M ");
-        attroff(COLOR_PAIR(1));
-      } else {
-        int adjacent = board[row][col].adjacent_mines;
-        switch (adjacent) {
-        case 0:
-          attron(COLOR_PAIR(2));
-          break; // Blue
-        case 1:
-          attron(COLOR_PAIR(3));
-          break; // Blue
-        case 2:
-          attron(COLOR_PAIR(4));
-          break; // Green
-        case 3:
-          attron(COLOR_PAIR(5));
-          break; // Yellow
-        case 4:
-          attron(COLOR_PAIR(6));
-          break; // Red
-        case 5:
-          attron(COLOR_PAIR(7));
-          break; // Pink
-        case 6:
-          attron(COLOR_PAIR(8));
-          break; // Lime green
-        case 7:
-          attron(COLOR_PAIR(9));
-          break; // Purple
-        default:
+      Cell curr_cell = board[row][col];
+
+      bool is_cursor = (row == cursor_row && col == cursor_col);
+      int color_pair = get_color_pair(curr_cell.adjacent_mines, is_cursor);
+
+      // draw all unopened cells gray color
+      if (!curr_cell.is_revealed and !curr_cell.is_flagged) {
+        if (is_cursor) {
+          attron(COLOR_PAIR(10));
+          printw("* ");
+          attroff(COLOR_PAIR(10));
+          continue;
+        } else {
           attron(COLOR_PAIR(1));
-          break; // Default
+          printw("* ");
+          attroff(COLOR_PAIR(1));
+          continue;
         }
-        printw("%d ", adjacent);
-        attroff(COLOR_PAIR(1) | COLOR_PAIR(2) | COLOR_PAIR(3) | COLOR_PAIR(4) |
-                COLOR_PAIR(5) | COLOR_PAIR(6) | COLOR_PAIR(7) | COLOR_PAIR(8));
-      }
-
-      if (row == cursor_row && col == cursor_col) {
-        attroff(A_REVERSE);
+      } else { // its either revelead or it's a flag
+        attron(COLOR_PAIR(color_pair));
+        if (curr_cell.is_flagged) {
+          printw("F ");
+        } else if (board[row][col].is_mine) {
+          printw("M ");
+        } else {
+          printw("%d ", board[row][col].adjacent_mines);
+        }
+        attroff(COLOR_PAIR(color_pair));
       }
     }
     printw("\n");
@@ -247,17 +259,12 @@ void play_game() {
       flag_cell(board, cursor_row, cursor_col);
       break;
     case ' ':
-      game_over = !reveal_cell(board, cursor_row, cursor_col);
-      if (game_over) {
-        mvprintw(BOARD_ROWS + 2, 0, "You hit a mine! Game over!");
-        refresh();
-        char choice = getch();
-        if (choice == 'y' || choice == 'Y') {
-          endwin();
-          play_game();
-          return;
-        }
+      if (!board[cursor_row][cursor_col].is_revealed) {
+        game_over = !reveal_cell(board, cursor_row, cursor_col);
       }
+      break;
+    case 'q':
+      game_over = true;
       break;
     }
 
@@ -275,6 +282,18 @@ void play_game() {
       game_won = true;
       mvprintw(BOARD_ROWS + 2, 0,
                "Congratulations! You've cleared all the mines!");
+      refresh();
+      char choice = getch();
+      if (choice == 'y' || choice == 'Y') {
+        endwin();
+        play_game();
+        return;
+      }
+    }
+
+    if (game_over) {
+      mvprintw(BOARD_ROWS + 2, 0,
+               "Game Over! Press 'y' to restart or 'q' to quit.");
       refresh();
       char choice = getch();
       if (choice == 'y' || choice == 'Y') {
