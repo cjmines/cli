@@ -1,9 +1,13 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <functional>
 #include <iostream>
 #include <ncurses.h>
-#include <vector>
+#include <unordered_map>
+
+// Define Direction enum class
+enum class Direction { up, down, left, right };
 
 /**
  * @brief Represents the state of a cell in the Minesweeper board.
@@ -16,7 +20,8 @@ struct Cell {
 };
 
 /**
- * @brief Initializes the Minesweeper board with mines and adjacent mine counts.
+ * @brief Initializes the Minesweeper board with mines and adjacent mine
+ * counts.
  *
  * @param board 2D vector representing the Minesweeper board.
  * @param mines_count Number of mines to place on the board.
@@ -140,6 +145,7 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
 
       // Draw unopened cells, note all flags are unopened.
       bool is_untouched = !curr_cell.is_revealed && !curr_cell.is_flagged;
+      // TODO this whole if statement is bad
       if (is_untouched) {
         if (is_cursor) {
           attron(COLOR_PAIR(10));
@@ -152,9 +158,15 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
         }
       } else {
         if (curr_cell.is_flagged) {
-          attron(COLOR_PAIR(11));
-          printw("F ");
-          attroff(COLOR_PAIR(11));
+          if (is_cursor) {
+            attron(COLOR_PAIR(color_pair));
+            printw("F ");
+            attroff(COLOR_PAIR(color_pair));
+          } else {
+            attron(COLOR_PAIR(11));
+            printw("F ");
+            attroff(COLOR_PAIR(11));
+          }
         } else if (curr_cell.is_mine) {
           printw("M ");
         } else {
@@ -252,7 +264,7 @@ bool reveal_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
       }
     }
   }
-    return true;
+  return true;
 }
 
 /**
@@ -302,6 +314,25 @@ void flag_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
 }
 
 /**
+ * @brief If the minefield has successfully been cleared
+ */
+bool field_clear(std::vector<std::vector<Cell>> &board) {
+  int remaining_mines = 0;
+  for (const auto &row : board) {
+    for (const auto &cell : row) {
+      bool mine_is_flagged = cell.is_mine && cell.is_flagged;
+      bool non_mine_is_revealed = !cell.is_mine && cell.is_revealed;
+      bool cell_correct = mine_is_flagged or non_mine_is_revealed;
+      if (not cell_correct) {
+        return false;
+      }
+    }
+  }
+  // all cells are correct
+  return true;
+}
+
+/**
  * @brief Displays the help text for the command-line Minesweeper game.
  */
 void display_help() {
@@ -313,6 +344,67 @@ void display_help() {
       << "  --height <value>   Set the height of the board (default: 10)\n"
       << "  --mines <value>    Set the number of mines (default: 10)\n"
       << "  --help             Display this help message\n";
+}
+
+// Vim-style map for direction keys
+std::unordered_map<Direction, char> vim_map = {{Direction::up, 'k'},
+                                               {Direction::down, 'j'},
+                                               {Direction::left, 'h'},
+                                               {Direction::right, 'l'}};
+
+// Standard map for arrow keys
+std::unordered_map<int, Direction> standard_map = {
+    {KEY_UP, Direction::up},
+    {KEY_DOWN, Direction::down},
+    {KEY_LEFT, Direction::left},
+    {KEY_RIGHT, Direction::right}};
+
+// Function to create action map with captured variables
+auto create_action_map(int &cursor_row, int &cursor_col,
+                       std::vector<std::vector<Cell>> &board, bool &game_over,
+                       int height, int width, int mines_count) {
+  return std::unordered_map<int, std::function<void()>>{
+      {static_cast<int>(vim_map[Direction::up]),
+       [&]() { cursor_row = std::max(0, cursor_row - 1); }},
+      {static_cast<int>(vim_map[Direction::down]),
+       [&]() {
+         cursor_row =
+             std::min(static_cast<int>(board.size()) - 1, cursor_row + 1);
+       }},
+      {static_cast<int>(vim_map[Direction::left]),
+       [&]() { cursor_col = std::max(0, cursor_col - 1); }},
+      {static_cast<int>(vim_map[Direction::right]),
+       [&]() {
+         cursor_col =
+             std::min(static_cast<int>(board[0].size()) - 1, cursor_col + 1);
+       }},
+      {'d',
+       [&]() {
+         if (!reveal_cell(board, cursor_row, cursor_col)) {
+           game_over = true;
+           mvprintw(board.size() + 2, 0,
+                    "Game over! Press 'r' to restart or 'q' to quit.");
+         }
+       }},
+      {'D',
+       [&]() {
+         if (!reveal_adjacent_cells(board, cursor_row, cursor_col)) {
+           game_over = true;
+           mvprintw(board.size() + 2, 0,
+                    "Game over! Press 'r' to restart or 'q' to quit.");
+         }
+       }},
+      {'f', [&]() { toggle_flag_cell(board, cursor_row, cursor_col); }},
+      {'F', [&]() { flag_adjacent_cells(board, cursor_row, cursor_col); }},
+      {'q', [&]() { game_over = true; }},
+      {'r', [&]() {
+         board =
+             std::vector<std::vector<Cell>>(height, std::vector<Cell>(width));
+         initialize_board(board, mines_count);
+         cursor_row = 0;
+         cursor_col = 0;
+         game_over = false;
+       }}};
 }
 
 /**
@@ -357,72 +449,20 @@ int main(int argc, char *argv[]) {
   int cursor_col = 0;
   bool game_over = false;
 
+  auto action_map = create_action_map(cursor_row, cursor_col, board, game_over,
+                                      height, width, mines_count);
+
   while (!game_over) {
     display_board(board, cursor_row, cursor_col);
     int ch = getch();
-    switch (ch) {
-    case KEY_UP:
-      cursor_row = std::max(0, cursor_row - 1);
-      break;
-    case KEY_DOWN:
-      cursor_row = std::min(static_cast<int>(board.size()) - 1, cursor_row + 1);
-      break;
-    case KEY_LEFT:
-      cursor_col = std::max(0, cursor_col - 1);
-      break;
-    case KEY_RIGHT:
-      cursor_col =
-          std::min(static_cast<int>(board[0].size()) - 1, cursor_col + 1);
-      break;
-    case 'd':
-      if (!reveal_cell(board, cursor_row, cursor_col)) {
-        game_over = true;
-        mvprintw(board.size() + 2, 0,
-                 "Game over! Press 'r' to restart or 'q' to quit.");
-      }
-      break;
-    case 'D':
-      if (!reveal_adjacent_cells(board, cursor_row, cursor_col)) {
-        game_over = true;
-        mvprintw(board.size() + 2, 0,
-                 "Game over! Press 'r' to restart or 'q' to quit.");
-      }
-      break;
-    case 'f':
-      toggle_flag_cell(board, cursor_row, cursor_col);
-      break;
-    case 'F': // Shift-F to flag all adjacent cells
-      flag_adjacent_cells(board, cursor_row, cursor_col);
-      break;
-    case 'q':
-      game_over = true;
-      break;
-    case 'r':
-      board = std::vector<std::vector<Cell>>(height, std::vector<Cell>(width));
-      initialize_board(board, mines_count);
-      cursor_row = 0;
-      cursor_col = 0;
-      game_over = false;
-      break;
-    default:
-      break;
+
+    if (action_map.find(ch) != action_map.end()) {
+      action_map[ch]();
     }
 
-    // Check for win condition
-    bool all_revealed = true;
-    for (const auto &row : board) {
-      for (const auto &cell : row) {
-        if (!cell.is_mine && !cell.is_revealed) {
-          all_revealed = false;
-          break;
-        }
-      }
-    }
-    if (all_revealed) {
-      mvprintw(board.size() + 2, 0,
-               "Congratulations! You cleared the board! Press 'r' to restart "
-               "or 'q' to quit.");
+    if (field_clear(board)) {
       game_over = true;
+      mvprintw(board.size() + 2, 0, "You won, well done");
     }
   }
 
