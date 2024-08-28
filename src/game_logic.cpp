@@ -9,9 +9,6 @@
 // Define Direction enum class
 enum class Direction { up, down, left, right };
 
-/**
- * @brief Represents the state of a cell in the Minesweeper board.
- */
 struct Cell {
   bool is_mine = false;     ///< Indicates if the cell contains a mine.
   bool is_revealed = false; ///< Indicates if the cell has been revealed.
@@ -19,13 +16,6 @@ struct Cell {
   int adjacent_mines = 0;   ///< Number of adjacent mines.
 };
 
-/**
- * @brief Initializes the Minesweeper board with mines and adjacent mine
- * counts.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param mines_count Number of mines to place on the board.
- */
 void initialize_board(std::vector<std::vector<Cell>> &board, int mines_count) {
   std::srand(std::time(0));
   int mines_placed = 0;
@@ -58,9 +48,6 @@ void initialize_board(std::vector<std::vector<Cell>> &board, int mines_count) {
   }
 }
 
-/**
- * @brief Initializes the ncurses environment and color pairs.
- */
 void initialize_ncurses() {
   initscr();
   keypad(stdscr, TRUE);
@@ -82,14 +69,6 @@ void initialize_ncurses() {
   init_pair(11, COLOR_BLACK, COLOR_RED);     // Flag
 }
 
-/**
- * @brief Gets the color pair for a specific number and cursor state.
- *
- * @param number The number on the cell (0-8) or special value for mine or flag.
- * @param is_cursor Boolean flag indicating if the cell is under the cursor.
- *
- * @return The color pair number.
- */
 int get_color_pair(int number, bool is_cursor) {
   if (is_cursor) {
     return 10; // Cursor color: gold on black
@@ -116,13 +95,6 @@ int get_color_pair(int number, bool is_cursor) {
   }
 }
 
-/**
- * @brief Displays the Minesweeper board with colored cells and cursor.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param cursor_row Current row of the cursor.
- * @param cursor_col Current column of the cursor.
- */
 void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
                    int cursor_col) {
   int remaining_mines = 0;
@@ -181,20 +153,6 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
   refresh();
 }
 
-/**
- * @brief Reveals a cell on the Minesweeper board recursively.
- *
- * This function reveals the specified cell and, if it has no adjacent mines,
- * recursively reveals its neighboring cells. If the number of adjacent mines
- * equals the number of adjacent flags, it reveals all non-flagged squares
- * around it.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param row Row index of the cell to reveal.
- * @param col Column index of the cell to reveal.
- *
- * @return True if the cell was revealed successfully, false if a mine was hit.
- */
 bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   if (row < 0 || row >= board.size() || col < 0 || col >= board[0].size() ||
       board[row][col].is_revealed || board[row][col].is_flagged) {
@@ -245,14 +203,6 @@ bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   return true;
 }
 
-/**
- * @brief Reveals all adjacent cells of a specified cell on the Minesweeper
- * board.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param row Row index of the center cell.
- * @param col Column index of the center cell.
- */
 bool reveal_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
                            int col) {
   for (int i = -1; i <= 1; i++) {
@@ -267,13 +217,6 @@ bool reveal_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
   return true;
 }
 
-/**
- * @brief Flags or unflags a cell on the Minesweeper board.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param row Row index of the cell to flag or unflag.
- * @param col Column index of the cell to flag or unflag.
- */
 void toggle_flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   if (row >= 0 && row < board.size() && col >= 0 && col < board[0].size() &&
       !board[row][col].is_revealed) {
@@ -281,13 +224,6 @@ void toggle_flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   }
 }
 
-/**
- * @brief Flags a cell on the Minesweeper board.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param row Row index of the cell to flag
- * @param col Column index of the cell to flag
- */
 void flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   if (row >= 0 && row < board.size() && col >= 0 && col < board[0].size() &&
       !board[row][col].is_revealed) {
@@ -295,13 +231,6 @@ void flag_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
   }
 }
 
-/**
- * @brief Flags all adjacent cells of a specified cell on the Minesweeper board.
- *
- * @param board 2D vector representing the Minesweeper board.
- * @param row Row index of the center cell.
- * @param col Column index of the center cell.
- */
 void flag_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
                          int col) {
   for (int i = -1; i <= 1; i++) {
@@ -313,9 +242,6 @@ void flag_adjacent_cells(std::vector<std::vector<Cell>> &board, int row,
   }
 }
 
-/**
- * @brief If the minefield has successfully been cleared
- */
 bool field_clear(std::vector<std::vector<Cell>> &board) {
   int remaining_mines = 0;
   for (const auto &row : board) {
@@ -332,9 +258,6 @@ bool field_clear(std::vector<std::vector<Cell>> &board) {
   return true;
 }
 
-/**
- * @brief Displays the help text for the command-line Minesweeper game.
- */
 void display_help() {
   std::cout
       << "Minesweeper Game - Command Line Version\n"
@@ -346,34 +269,36 @@ void display_help() {
       << "  --help             Display this help message\n";
 }
 
-// Vim-style map for direction keys
-std::unordered_map<Direction, char> vim_map = {{Direction::up, 'k'},
-                                               {Direction::down, 'j'},
-                                               {Direction::left, 'h'},
-                                               {Direction::right, 'l'}};
+using KeyMap = std::unordered_map<Direction, int>;
 
-// Standard map for arrow keys
-std::unordered_map<int, Direction> standard_map = {
-    {KEY_UP, Direction::up},
-    {KEY_DOWN, Direction::down},
-    {KEY_LEFT, Direction::left},
-    {KEY_RIGHT, Direction::right}};
+// Vim-style map for direction keys
+KeyMap vim_map = {{Direction::up, static_cast<int>('k')},
+                  {Direction::down, static_cast<int>('j')},
+                  {Direction::left, static_cast<int>('h')},
+                  {Direction::right, static_cast<int>('l')}};
+
+KeyMap regular_map = {{Direction::up, KEY_UP},
+                      {Direction::down, KEY_DOWN},
+                      {Direction::left, KEY_LEFT},
+                      {Direction::right, KEY_RIGHT}};
+
+KeyMap selected_map = regular_map;
 
 // Function to create action map with captured variables
 auto create_action_map(int &cursor_row, int &cursor_col,
                        std::vector<std::vector<Cell>> &board, bool &game_over,
                        int height, int width, int mines_count) {
   return std::unordered_map<int, std::function<void()>>{
-      {static_cast<int>(vim_map[Direction::up]),
+      {selected_map[Direction::up],
        [&]() { cursor_row = std::max(0, cursor_row - 1); }},
-      {static_cast<int>(vim_map[Direction::down]),
+      {selected_map[Direction::down],
        [&]() {
          cursor_row =
              std::min(static_cast<int>(board.size()) - 1, cursor_row + 1);
        }},
-      {static_cast<int>(vim_map[Direction::left]),
+      {selected_map[Direction::left],
        [&]() { cursor_col = std::max(0, cursor_col - 1); }},
-      {static_cast<int>(vim_map[Direction::right]),
+      {selected_map[Direction::right],
        [&]() {
          cursor_col =
              std::min(static_cast<int>(board[0].size()) - 1, cursor_col + 1);
@@ -407,17 +332,7 @@ auto create_action_map(int &cursor_row, int &cursor_col,
        }}};
 }
 
-/**
- * @brief Main function for the Minesweeper game.
- *
- * Handles command-line arguments and manages the game loop.
- *
- * @param argc Number of command-line arguments.
- * @param argv Array of command-line arguments.
- *
- * @return Exit status code.
- */
-int main(int argc, char *argv[]) {
+int start_game(int argc, char *argv[]) {
   int width = 10;
   int height = 10;
   int mines_count = 10;
@@ -448,6 +363,7 @@ int main(int argc, char *argv[]) {
   int cursor_row = 0;
   int cursor_col = 0;
   bool game_over = false;
+  bool user_requested_quit;
 
   auto action_map = create_action_map(cursor_row, cursor_col, board, game_over,
                                       height, width, mines_count);
