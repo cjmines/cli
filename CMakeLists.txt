@@ -14,7 +14,16 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 # Add the main executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-find_package(Curses)
-target_link_libraries(${PROJECT_NAME} Curses::Curses)
+# Find the ncurses package
+find_package(Curses REQUIRED)
+
+# Include the ncurses header files
+include_directories(${CURSES_INCLUDE_DIR})
+
+# Link the ncurses library to your executable
+target_link_libraries(${PROJECT_NAME} ${CURSES_LIBRARIES})
+
+# find_package(Curses)
+# target_link_libraries(${PROJECT_NAME} Curses::Curses)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

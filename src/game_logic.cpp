@@ -1,24 +1,56 @@
+#include "solver.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <ncurses.h>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
-// Define Direction enum class
-enum class Direction { up, down, left, right };
+// Function to read the Minesweeper board from a file
+std::pair<Board, int> read_board_from_file(const std::string &filename) {
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    throw std::runtime_error("Failed to open file");
+  }
 
-struct Cell {
-  bool is_mine = false;     ///< Indicates if the cell contains a mine.
-  bool is_revealed = false; ///< Indicates if the cell has been revealed.
-  bool is_flagged = false;  ///< Indicates if the cell is flagged.
-  int adjacent_mines = 0;   ///< Number of adjacent mines.
-};
+  std::vector<std::vector<Cell>> board;
+  std::string line;
 
-void initialize_board(std::vector<std::vector<Cell>> &board, int mines_count) {
-  std::srand(std::time(0));
+  int mine_count = 0;
+
+  while (std::getline(file, line)) {
+    std::vector<Cell> row;
+    std::istringstream iss(line);
+    std::string value;
+
+    while (iss >> value) {
+      Cell cell;
+      if (value == "M") {
+        cell.is_mine = true;
+        mine_count += 1;
+      } else {
+        cell.adjacent_mines = std::stoi(value);
+      }
+      row.push_back(cell);
+    }
+    board.push_back(row);
+  }
+
+  file.close();
+  return {board, mine_count};
+}
+
+Board generate_board(int mines_count, int height, int width) {
+  std::vector<std::vector<Cell>> board(height, std::vector<Cell>(width));
   int mines_placed = 0;
+
   while (mines_placed < mines_count) {
     int row = std::rand() % board.size();
     int col = std::rand() % board[0].size();
@@ -46,6 +78,7 @@ void initialize_board(std::vector<std::vector<Cell>> &board, int mines_count) {
       }
     }
   }
+  return board;
 }
 
 void initialize_ncurses() {
@@ -123,6 +156,10 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
           attron(COLOR_PAIR(10));
           printw("* ");
           attroff(COLOR_PAIR(10));
+        } else if (curr_cell.safe_start) {
+          attron(COLOR_PAIR(1));
+          printw("X ");
+          attroff(COLOR_PAIR(1));
         } else {
           attron(COLOR_PAIR(1));
           printw("* ");
@@ -154,7 +191,7 @@ void display_board(const std::vector<std::vector<Cell>> &board, int cursor_row,
 }
 
 bool reveal_cell(std::vector<std::vector<Cell>> &board, int row, int col) {
-  if (row < 0 || row >= board.size() || col < 0 || col >= board[0].size() ||
+  if (row < 0 || row >= board.size() || col < 0 || col >= board.at(0).size() ||
       board[row][col].is_revealed || board[row][col].is_flagged) {
     return true;
   }
@@ -266,28 +303,34 @@ void display_help() {
       << "  --width <value>    Set the width of the board (default: 10)\n"
       << "  --height <value>   Set the height of the board (default: 10)\n"
       << "  --mines <value>    Set the number of mines (default: 10)\n"
+      << "  --ng               Produce a no guess board (default: false)\n"
+      << "  --vim              Enable vim mode controls for movement (default: "
+         "false)\n"
+      << "  --file <value>     Loads a minefield from the file, when used with "
+         "--ng it checks to see if the board is ngsolvable\n"
       << "  --help             Display this help message\n";
 }
 
 using KeyMap = std::unordered_map<Direction, int>;
 
-// Vim-style map for direction keys
-KeyMap vim_map = {{Direction::up, static_cast<int>('k')},
-                  {Direction::down, static_cast<int>('j')},
-                  {Direction::left, static_cast<int>('h')},
-                  {Direction::right, static_cast<int>('l')}};
-
-KeyMap regular_map = {{Direction::up, KEY_UP},
-                      {Direction::down, KEY_DOWN},
-                      {Direction::left, KEY_LEFT},
-                      {Direction::right, KEY_RIGHT}};
-
-KeyMap selected_map = regular_map;
-
 // Function to create action map with captured variables
 auto create_action_map(int &cursor_row, int &cursor_col,
                        std::vector<std::vector<Cell>> &board, bool &game_over,
-                       int height, int width, int mines_count) {
+                       int height, int width, int mines_count, bool &vim) {
+
+  // Vim-style map for direction keys
+  KeyMap vim_map = {{Direction::up, static_cast<int>('k')},
+                    {Direction::down, static_cast<int>('j')},
+                    {Direction::left, static_cast<int>('h')},
+                    {Direction::right, static_cast<int>('l')}};
+
+  KeyMap regular_map = {{Direction::up, KEY_UP},
+                        {Direction::down, KEY_DOWN},
+                        {Direction::left, KEY_LEFT},
+                        {Direction::right, KEY_RIGHT}};
+
+  KeyMap selected_map = vim ? vim_map : regular_map;
+
   return std::unordered_map<int, std::function<void()>>{
       {selected_map[Direction::up],
        [&]() { cursor_row = std::max(0, cursor_row - 1); }},
@@ -323,21 +366,21 @@ auto create_action_map(int &cursor_row, int &cursor_col,
       {'F', [&]() { flag_adjacent_cells(board, cursor_row, cursor_col); }},
       {'q', [&]() { game_over = true; }},
       {'r', [&]() {
-         board =
-             std::vector<std::vector<Cell>>(height, std::vector<Cell>(width));
-         initialize_board(board, mines_count);
-         cursor_row = 0;
-         cursor_col = 0;
-         game_over = false;
+         /* board = */
+         /*     std::vector<std::vector<Cell>>(height,
+          * std::vector<Cell>(width)); */
+         /* generate_board(board, mines_count); */
+         /* cursor_row = 0; */
+         /* cursor_col = 0; */
+         /* game_over = false; */
        }}};
 }
 
-int start_game(int argc, char *argv[]) {
-  int width = 10;
-  int height = 10;
-  int mines_count = 10;
-
+bool handle_command_line_args(int argc, char *argv[], int &width, int &height,
+                              int &mines_count, bool &no_guess, bool &vim,
+                              std::string &file_path) {
   // Handle command-line arguments
+  bool early_return = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
     if (arg == "--width" && i + 1 < argc) {
@@ -346,18 +389,78 @@ int start_game(int argc, char *argv[]) {
       height = std::stoi(argv[++i]);
     } else if (arg == "--mines" && i + 1 < argc) {
       mines_count = std::stoi(argv[++i]);
+    } else if (arg == "--ng") {
+      no_guess = true;
+    } else if (arg == "--vim") {
+      vim = true;
+    } else if (arg == "--file" && i + 1 < argc) {
+      file_path = argv[++i];
     } else if (arg == "--help") {
       display_help();
-      return 0;
+      early_return = true;
     } else {
       std::cerr << "Unknown argument: " << arg << std::endl;
       display_help();
-      return 1;
+      early_return = true;
+    }
+  }
+  return early_return;
+}
+
+int start_game(int argc, char *argv[]) {
+
+  int width = 10;
+  int height = 10;
+  int mine_count = 10;
+  bool no_guess = false;
+  bool vim = false;
+  std::string file_path;
+
+  bool early_return = handle_command_line_args(
+      argc, argv, width, height, mine_count, no_guess, vim, file_path);
+
+  std::srand(std::time(0));
+
+  Board board;
+
+  bool uses_file = not file_path.empty();
+
+  if (uses_file) {
+    auto pair = read_board_from_file(file_path);
+    board = pair.first;
+    mine_count = pair.second;
+  } else {
+    board = generate_board(mine_count, width, height);
+  }
+
+  if (no_guess) {
+    Solver solver;
+
+    if (uses_file) {
+      // check if the board is ng solvable
+      std::optional<std::pair<int, int>> solution =
+          solver.solve(board, mine_count);
+      if (solution.has_value()) {
+        std::cout << "file board is ngs" << std::endl;
+      } else {
+        std::cout << "file board is not ngs" << std::endl;
+      }
+    } else {
+      // keep trying until we genrate a ngsolvable board
+      std::optional<std::pair<int, int>> solution =
+          solver.solve(board, mine_count);
+
+      while (not solution.has_value()) {
+        std::cout << "gnerating a new board and trying again" << std::endl;
+        board = generate_board(mine_count, width, height);
+        solution = solver.solve(board, mine_count);
+      }
+
+      auto [row, col] = solution.value();
+      board[row][col].safe_start = true;
     }
   }
 
-  std::vector<std::vector<Cell>> board(height, std::vector<Cell>(width));
-  initialize_board(board, mines_count);
   initialize_ncurses();
 
   int cursor_row = 0;
@@ -366,7 +469,9 @@ int start_game(int argc, char *argv[]) {
   bool user_requested_quit;
 
   auto action_map = create_action_map(cursor_row, cursor_col, board, game_over,
-                                      height, width, mines_count);
+                                      height, width, mine_count, vim);
+
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   while (!game_over) {
     display_board(board, cursor_row, cursor_col);
@@ -383,5 +488,32 @@ int start_game(int argc, char *argv[]) {
   }
 
   endwin();
+
+  if (field_clear(board)) {
+    std::cout << "Well done, you've won :)" << std::endl;
+  } else {
+    std::cout << "You hit a mine :(" << std::endl;
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+
+  // Calculate the elapsed time
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      end_time - start_time);
+
+  // Extract minutes, seconds, and milliseconds
+  auto minutes =
+      std::chrono::duration_cast<std::chrono::minutes>(duration).count();
+  duration -= std::chrono::minutes(minutes);
+  auto seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+  duration -= std::chrono::seconds(seconds);
+  auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+  // Output the elapsed time in minutes, seconds, and milliseconds
+  std::cout << "Game duration: " << minutes << " minutes, " << seconds
+            << " seconds, " << milliseconds << " milliseconds" << std::endl;
+
   return 0;
 }
